@@ -8,6 +8,7 @@ local d3d8dev   = d3d.get_device();
 local statusHandler = require('statushandler');
 local buffTable = require('bufftable');
 
+
 debuffTable = T{};
 
 local debuff_font_settings = T{
@@ -50,96 +51,217 @@ function draw_circle(center, radius, color, segments, fill)
 	end
 end
 
+local cachedPartyIds = {};
+local cachedAllianceIds = {};
+local lastPartyUpdate = 0;
+
+local function updatePartyCache()
+    local now = os.clock();
+    -- Only update cache every 1 second
+    if now - lastPartyUpdate < 1.0 then
+        return;
+    end
+    lastPartyUpdate = now;
+    
+    cachedPartyIds = {};
+    cachedAllianceIds = {};
+    
+    local party = AshitaCore:GetMemoryManager():GetParty();
+    if party then
+        for i = 0, 5 do
+            if party:GetMemberIsActive(i) == 1 then
+                local id = party:GetMemberServerId(i);
+                if id ~= 0 then
+                    cachedPartyIds[id] = true;
+                end
+            end
+        end
+        for i = 6, 17 do
+            if party:GetMemberIsActive(i) == 1 then
+                local id = party:GetMemberServerId(i);
+                if id ~= 0 then
+                    cachedAllianceIds[id] = true;
+                end
+            end
+        end
+    end
+end
+
 function GetColorOfTarget(targetEntity, targetIndex)
-    -- Obtain the entity spawn flags..
+updatePartyCache();
+	
+	
+    local color = 0xFFFFFFFF;
+    if (targetEntity == nil or targetIndex == nil) then
+        return color;
+    end
 
-	local color = 0xFFFFFFFF;
-	if (targetIndex == nil) then
-		return color;
-	end
-    local flag = targetEntity.SpawnFlags;
+    local party  = AshitaCore:GetMemoryManager():GetParty();
+    local entMgr = AshitaCore:GetMemoryManager():GetEntity();
+    local flag   = targetEntity.SpawnFlags;
 
-    -- Determine the entity type and apply the proper color
-    if (bit.band(flag, 0x0001) == 0x0001) then --players
-		local party = AshitaCore:GetMemoryManager():GetParty();
-		for i = 0, 17 do
-			if (party:GetMemberIsActive(i) == 1) then
-				if (party:GetMemberTargetIndex(i) == targetIndex) then
-					color = 0xFF00FFFF;
-					break;
-				end
-			end
-		end
-    elseif (bit.band(flag, 0x0002) == 0x0002) then --npc
-        color = 0xFF66FF66;
-    else --mob
-		local entMgr = AshitaCore:GetMemoryManager():GetEntity();
-		local claimStatus = entMgr:GetClaimStatus(targetIndex);
-		local claimId = bit.band(claimStatus, 0xFFFF);
---		local isClaimed = (bit.band(claimStatus, 0xFFFF0000) ~= 0);
+    local function isPartyMember(serverId)
+        return cachedPartyIds[serverId] == true;
+    end
 
-		if (claimId == 0) then
-			color = 0xFFFFFF66;
-		else
-			color = 0xFFFF66FF;
-			local party = AshitaCore:GetMemoryManager():GetParty();
-			for i = 0, 17 do
-				if (party:GetMemberIsActive(i) == 1) then
-					if (party:GetMemberServerId(i) == claimId) then
-						color = 0xFFFF6666;
-						break;
-					end;
-				end
-			end
-		end
-	end
-	return color;
+    local function isAllianceMember(serverId)
+        return cachedAllianceIds[serverId] == true;
+    end
+
+    local selfId = 0;
+    if (party ~= nil) then
+        selfId = party:GetMemberServerId(0) or 0;
+    end
+
+    ------------------------------------------------------------------------
+    -- PLAYERS
+    ------------------------------------------------------------------------
+    if (bit.band(flag, 0x0001) == 0x0001) then
+        local targetServerId = entMgr:GetServerId(targetIndex) or 0;
+
+        if (targetServerId ~= 0 and selfId ~= 0 and targetServerId == selfId) then
+            color = 0xFF4287F5;      -- pc_self (66,135,245)
+        elseif isPartyMember(targetServerId) then
+            color = 0xFF45C7FF;      -- pc_party (69,199,255)
+        elseif isAllianceMember(targetServerId) then
+            color = 0xFF9EE2FF;      -- pc_alliance (158,226,255)
+        else
+            color = 0xFFFFFFFF;      -- pc_other (255,255,255)
+        end
+
+    ------------------------------------------------------------------------
+    -- NPC / TRUST
+    ------------------------------------------------------------------------
+    elseif (bit.band(flag, 0x0002) == 0x0002) then
+        color = 0xFF8CE384;          -- npc (140,227,132)
+
+    ------------------------------------------------------------------------
+    -- MONSTER / MOB
+    ------------------------------------------------------------------------
+    else
+        -- Here is the important part: GetClaimStatus returns the claimer's
+        -- server ID directly on your setup.
+        local claimServerId = entMgr:GetClaimStatus(targetIndex) or 0;
+
+        if (claimServerId == 0) then
+            -- Unclaimed / passive
+            color = 0xFFF7ED8D;      -- Bars monster_passive (247,237,141)
+        else
+            local isPartyClaim    = false;
+            local isAllianceClaim = false;
+
+            -- You personally claiming it (solo or in party) will appear here
+            if isPartyMember(claimServerId) or (selfId ~= 0 and claimServerId == selfId) then
+                isPartyClaim = true;
+            elseif isAllianceMember(claimServerId) then
+                isAllianceClaim = true;
+            end
+
+            if (isPartyClaim) then
+                color = 0xFFFF6666;  -- Bars monster_claimed_party (255,50,50)
+            elseif (isAllianceClaim) then
+                color = 0xFFFF5C72;  -- Bars monster_claimed_alliance (255,92,114)
+            else
+                color = 0xFFD36BD3;  -- Bars monster_claimed_other (211,107,211)
+            end
+        end
+    end
+
+    return color;
 end
 
 function GetColorOfTargetRGBA(targetEntity, targetIndex)
-    -- Obtain the entity spawn flags..
+    -- Bars-style target color (RGBA) using GetClaimStatus as the claimer's server ID.
 
-	local color = {1,1,1,1};
-	if (targetIndex == nil) then
-		return color;
-	end
-    local flag = targetEntity.SpawnFlags;
+    local color = {1, 1, 1, 1};
+    if (targetEntity == nil or targetIndex == nil) then
+        return color;
+    end
 
-    -- Determine the entity type and apply the proper color
-    if (bit.band(flag, 0x0001) == 0x0001) then --players
-		local party = AshitaCore:GetMemoryManager():GetParty();
-		for i = 0, 17 do
-			if (party:GetMemberIsActive(i) == 1) then
-				if (party:GetMemberTargetIndex(i) == targetIndex) then
-					color = {0,1,1,1};
-					break;
-				end
-			end
-		end
-    elseif (bit.band(flag, 0x0002) == 0x0002) then --npc
-        color = {.4,1,.4,1};
-    else --mob
-		local entMgr = AshitaCore:GetMemoryManager():GetEntity();
-		local claimStatus = entMgr:GetClaimStatus(targetIndex);
-		local claimId = bit.band(claimStatus, 0xFFFF);
---		local isClaimed = (bit.band(claimStatus, 0xFFFF0000) ~= 0);
+    local party  = AshitaCore:GetMemoryManager():GetParty();
+    local entMgr = AshitaCore:GetMemoryManager():GetEntity();
+    local flag   = targetEntity.SpawnFlags;
 
-		if (claimId == 0) then
-			color = {1,1,.4,1};
-		else
-			color = {1,.4,1,1};
-			local party = AshitaCore:GetMemoryManager():GetParty();
-			for i = 0, 17 do
-				if (party:GetMemberIsActive(i) == 1) then
-					if (party:GetMemberServerId(i) == claimId) then
-						color = {1,.4,.4,1};
-						break;
-					end;
-				end
-			end
-		end
-	end
-	return color;
+    local function isPartyMember(serverId)
+        if (party == nil or serverId == nil or serverId == 0) then
+            return false;
+        end
+        for i = 0, 5 do
+            if (party:GetMemberIsActive(i) == 1 and party:GetMemberServerId(i) == serverId) then
+                return true;
+            end
+        end
+        return false;
+    end
+
+    local function isAllianceMember(serverId)
+        if (party == nil or serverId == nil or serverId == 0) then
+            return false;
+        end
+        for i = 6, 17 do
+            if (party:GetMemberIsActive(i) == 1 and party:GetMemberServerId(i) == serverId) then
+                return true;
+            end
+        end
+        return false;
+    end
+
+    local selfId = 0;
+    if (party ~= nil) then
+        selfId = party:GetMemberServerId(0) or 0;
+    end
+
+    ------------------------------------------------------------------------
+    -- PLAYERS
+    ------------------------------------------------------------------------
+    if (bit.band(flag, 0x0001) == 0x0001) then
+        local targetServerId = entMgr:GetServerId(targetIndex) or 0;
+
+        if (targetServerId ~= 0 and selfId ~= 0 and targetServerId == selfId) then
+            color = {0.259, 0.529, 0.961, 1.0};  -- pc_self
+        elseif isPartyMember(targetServerId) then
+            color = {0.271, 0.780, 1.000, 1.0};  -- pc_party
+        elseif isAllianceMember(targetServerId) then
+            color = {0.620, 0.886, 1.000, 1.0};  -- pc_alliance
+        else
+            color = {1.000, 1.000, 1.000, 1.0};  -- pc_other
+        end
+
+    ------------------------------------------------------------------------
+    -- NPC / TRUST
+    ------------------------------------------------------------------------
+    elseif (bit.band(flag, 0x0002) == 0x0002) then
+        color = {0.549, 0.890, 0.518, 1.0};      -- npc
+
+    ------------------------------------------------------------------------
+    -- MONSTER / MOB
+    ------------------------------------------------------------------------
+    else
+        local claimServerId = entMgr:GetClaimStatus(targetIndex) or 0;
+
+        if (claimServerId == 0) then
+            color = {0.969, 0.929, 0.553, 1.0};  -- monster_passive
+        else
+            local isPartyClaim    = false;
+            local isAllianceClaim = false;
+
+            if isPartyMember(claimServerId) or (selfId ~= 0 and claimServerId == selfId) then
+                isPartyClaim = true;
+            elseif isAllianceMember(claimServerId) then
+                isAllianceClaim = true;
+            end
+
+            if (isPartyClaim) then
+                color = {1.000, 0.196, 0.196, 1.0};  -- monster_claimed_party
+            elseif (isAllianceClaim) then
+                color = {1.000, 0.361, 0.447, 1.0};  -- monster_claimed_alliance
+            else
+                color = {0.827, 0.420, 0.827, 1.0};  -- monster_claimed_other
+            end
+        end
+    end
+
+    return color;
 end
 
 function GetIsMob(targetEntity)
@@ -533,4 +655,65 @@ function GetHpColors(hpPercent)
     end
 
     return hpNameColor, hpGradient;
+end
+
+-- Global-ish focus target state (server id based)
+FocusTarget = {
+    serverId = 0,
+};
+
+function SetFocusTargetFromCurrent()
+    local mainTargetIndex, _ = GetTargets();
+    if (mainTargetIndex == nil) then
+        return;
+    end
+
+    local entMgr = AshitaCore:GetMemoryManager():GetEntity();
+    if (entMgr == nil) then
+        return;
+    end
+
+    local serverId = entMgr:GetServerId(mainTargetIndex) or 0;
+    if (serverId ~= 0) then
+        FocusTarget.serverId = serverId;
+    end
+end
+
+function ClearFocusTarget()
+    FocusTarget.serverId = 0;
+end
+
+-- Resolve FocusTarget to an index + entity each frame
+function GetFocusTargetEntity()
+    if (FocusTarget.serverId == 0) then
+        return nil, nil;
+    end
+
+    local entMgr = AshitaCore:GetMemoryManager():GetEntity();
+    if (entMgr == nil) then
+        return nil, nil;
+    end
+
+    local resolvedIndex = nil;
+
+    -- Simple scan for the entity with that serverId
+    for i = 0, 2303 do
+        if (entMgr:GetServerId(i) == FocusTarget.serverId) then
+            resolvedIndex = i;
+            break;
+        end
+    end
+
+    if (resolvedIndex == nil) then
+        -- focus target probably despawned / zoned
+        return nil, nil;
+    end
+
+    -- If you already have a helper GetEntity(index), use it here.
+    local focusEntity = GetEntity(resolvedIndex);
+    if (focusEntity == nil or focusEntity.Name == nil or focusEntity.HPPercent == nil) then
+        return nil, nil;
+    end
+
+    return resolvedIndex, focusEntity;
 end
