@@ -4,9 +4,11 @@ local fonts = require('fonts');
 local primitives = require('primitives');
 local statusHandler = require('statushandler');
 local buffTable = require('bufftable');
+local statusBlacklist = require('statusblacklist');
 local progressbar = require('progressbar');
 local encoding = require('gdifonts.encoding');
 local ashita_settings = require('settings');
+local actionTracker = require('actiontracker');
 
 local fullMenuWidth = {};
 local fullMenuHeight = {};
@@ -32,7 +34,9 @@ local partySubTargeted;
 local memberText = {};
 local partyMaxSize = 6;
 local memberTextCount = partyMaxSize * 3;
-
+-- Bars-style SP pulse state for each party slot (0..17)
+local spPulseAlpha       = {};
+local spPulseDirectionUp = {};
 local borderConfig = {1, '#243e58'};
 
 local bgImageKeys = { 'bg', 'tl', 'tr', 'br', 'bl' };
@@ -41,6 +45,91 @@ local bgTitleItemHeight;
 local loadedBg = nil;
 
 local partyList = {};
+
+----------------------------------------------------------------
+-- Preview-only random buffs / debuffs
+----------------------------------------------------------------
+
+-- Build pools of known buff and debuff IDs from buffTable.statusEffects
+local previewBuffIds   = {};
+local previewDebuffIds = {};
+
+if (buffTable and buffTable.statusEffects) then
+    for id, kind in pairs(buffTable.statusEffects) do
+        -- 0 = buff, 1 = debuff (see bufftable.lua comment)
+        if kind == 0 then
+            table.insert(previewBuffIds, id);
+        elseif kind == 1 then
+            table.insert(previewDebuffIds, id);
+        end
+    end
+end
+
+-- Cache a random set per member index so it doesn't change every frame
+local previewStatusByMember = {};
+
+local function GetRandomPreviewStatusIds()
+    -- Fallback if something goes wrong building the pools
+    if (#previewBuffIds == 0 or #previewDebuffIds == 0) then
+        -- Protect, Haste, Poison, Paralyze (example)
+        return { 40, 33, 3, 4 };
+    end
+
+    local total = math.random(2, 5); -- 2–5 statuses
+    local ids   = {};
+    local used  = {};
+
+    local function addUnique(id)
+        if not used[id] then
+            table.insert(ids, id);
+            used[id] = true;
+        end
+    end
+
+    -- At least one buff and one debuff
+    addUnique(previewBuffIds[math.random(1, #previewBuffIds)]);
+    addUnique(previewDebuffIds[math.random(1, #previewDebuffIds)]);
+
+    -- Fill the rest with random buffs/debuffs
+    while #ids < total do
+        local list;
+        if (math.random() < 0.5) then
+            list = previewBuffIds;
+        else
+            list = previewDebuffIds;
+        end
+
+        addUnique(list[math.random(1, #list)]);
+    end
+
+    return ids;
+end
+
+-- Convert a simple Lua array (1..N) into a 0-based T{} like the real buff array
+local function BuildPreviewBuffArray(ids)
+    local arr = T{};
+    for i, id in ipairs(ids) do
+        arr[i - 1] = id;  -- 0-based indexing
+    end
+    return arr;
+end
+
+local function GetPreviewBuffsForMember(memIdx)
+    if (previewStatusByMember[memIdx] == nil) then
+        local ids = GetRandomPreviewStatusIds();
+        previewStatusByMember[memIdx] = BuildPreviewBuffArray(ids);
+    end
+    return previewStatusByMember[memIdx];
+end
+
+
+local function isStatusBlacklisted(statusId)
+    -- If the module is missing or doesn’t define IsBlacklisted, fail safe.
+    if statusBlacklist == nil or statusBlacklist.IsBlacklisted == nil then
+        return false
+    end
+    return statusBlacklist.IsBlacklisted(statusId)
+end
 
 
 local function getScale(partyIndex)
@@ -122,7 +211,11 @@ local function GetMemberInformation(memIdx)
         memInfo.level = 99;
         memInfo.targeted = memIdx == 4;
         memInfo.serverid = 0;
-        memInfo.buffs = nil;
+
+        -- Mark this as a preview row and give it 2–5 random buffs/debuffs
+        memInfo.isPreview = true;
+        memInfo.buffs    = GetPreviewBuffsForMember(memIdx);
+
         memInfo.sync = false;
         memInfo.subTargeted = false;
         memInfo.zone = 100;
@@ -131,6 +224,7 @@ local function GetMemberInformation(memIdx)
         memInfo.leader = memIdx == 0 or memIdx == 6 or memIdx == 12;
         return memInfo
     end
+
 
     local party = AshitaCore:GetMemoryManager():GetParty();
     local player = AshitaCore:GetMemoryManager():GetPlayer();
@@ -291,7 +385,7 @@ local function DrawMember(memIdx, settings)
         draw_circle({hpStartX + settings.dotRadius/2, hpStartY + settings.dotRadius/2}, settings.dotRadius, {1, 1, .5, 1}, settings.dotRadius * 3, true);
     end
 
-    -- Update the name text
+    -- Update the name text (with SP overlay + pulse)
     local distanceText = ''
     local highlightDistance = false
     if (gConfig.showPartyListDistance) then
@@ -309,14 +403,107 @@ local function DrawMember(memIdx, settings)
         end
     end
 
+    -- Base name color (white or cyan if within highlight range)
+    local baseNameColor;
     if (highlightDistance) then
-        memberText[memIdx].name:SetColor(0xFF00FFFF);
+        baseNameColor = 0xFF00FFFF;
     else
-        memberText[memIdx].name:SetColor(0xFFFFFFFF);
+        baseNameColor = 0xFFFFFFFF;
     end
+
+    -- Start with normal name + distance
+    local displayName = tostring(memInfo.name) .. distanceText;
+    local nameColor   = baseNameColor;
+
+    ----------------------------------------------------------------
+    -- Bars-style SP overlay and pulse for party members
+    -- (with preview support on Player 4 when the config option is enabled)
+    ----------------------------------------------------------------
+
+    -- memIdx is 0-based; memIdx == 3 is "Player 4" in the list.
+    local isPreviewSP = (memInfo.isPreview == true and memIdx == 3);
+
+    if (gConfig.partyListShowSPName and (isPreviewSP or (memInfo.serverid ~= nil and memInfo.serverid ~= 0))) then
+        local spName;
+        local spRemaining;
+
+        if isPreviewSP then
+            -- Preview-mode fake SP:
+            --   Player 4 always shows an active SP timer while in preview.
+            spName = 'Chainspell';
+
+            -- Make a looping countdown for show:
+            --  e.g. 0–89 seconds, repeating.
+            local cycle = 90; -- seconds
+            local now   = os.time();
+            spRemaining = (cycle - (now % cycle));
+        else
+            -- Normal in-game behavior:
+            spName, spRemaining = actionTracker.GetSpecialForServerId(memInfo.serverid);
+        end
+
+        local spActive = (spName ~= nil and spRemaining ~= nil and spRemaining > 0);
+
+        if spActive then
+            -- Format remaining time as M:SS
+            local seconds = math.floor(spRemaining + 0.5);
+            local minutes = math.floor(seconds / 60);
+            local secPart = seconds % 60;
+            local spTimer = string.format('%d:%02d', minutes, secPart);
+
+            -- Alternate like Bars / your targetbar:
+            --   "0:59 Chainspell"
+            --   "0:58 Playername - 23.4"
+            if (seconds % 2 == 0) then
+                displayName = string.format('%s %s', spTimer, spName);
+            else
+                displayName = string.format('%s %s', spTimer, displayName);
+            end
+
+            -- Pulse alpha just for this member slot
+            local minAlpha = 80;   -- faintest
+            local maxAlpha = 255;  -- strongest
+            local speed    = 3;    -- pulse speed per frame
+
+            local a  = spPulseAlpha[memIdx] or maxAlpha;
+            local up = (spPulseDirectionUp[memIdx] ~= false);
+
+            if up then
+                a = a + speed;
+                if a >= maxAlpha then
+                    a  = maxAlpha;
+                    up = false;
+                end
+            else
+                a = a - speed;
+                if a <= minAlpha then
+                    a  = minAlpha;
+                    up = true;
+                end
+            end
+
+            spPulseAlpha[memIdx]       = a;
+            spPulseDirectionUp[memIdx] = up;
+
+            -- Replace only the alpha channel of baseNameColor
+            local rgb = bit.band(baseNameColor, 0x00FFFFFF);
+            nameColor = bit.bor(bit.lshift(a, 24), rgb);
+        else
+            -- No SP active – reset pulse, use base color
+            spPulseAlpha[memIdx]       = 255;
+            spPulseDirectionUp[memIdx] = true;
+            nameColor = baseNameColor;
+        end
+    else
+        nameColor = baseNameColor;
+    end
+
+
+    memberText[memIdx].name:SetColor(nameColor);
     memberText[memIdx].name:SetPositionX(namePosX);
     memberText[memIdx].name:SetPositionY(hpStartY - nameSize.cy - settings.nameTextOffsetY);
-    memberText[memIdx].name:SetText(tostring(memInfo.name) .. distanceText);
+    memberText[memIdx].name:SetText(displayName);
+
 
     local nameSize = SIZE.new();
     memberText[memIdx].name:GetTextSize(nameSize);
@@ -405,78 +592,150 @@ local function DrawMember(memIdx, settings)
 
         -- Draw the different party list buff / debuff themes
         if (partyIndex == 1 and memInfo.buffs ~= nil and #memInfo.buffs > 0) then
-            if (gConfig.partyListStatusTheme == 0 or gConfig.partyListStatusTheme == 1) then
-                local buffs = {};
-                local debuffs = {};
-                for i = 0, #memInfo.buffs do
-                    if (buffTable.IsBuff(memInfo.buffs[i])) then
-                        table.insert(buffs, memInfo.buffs[i]);
-                    else
-                        table.insert(debuffs, memInfo.buffs[i]);
-                    end
-                end
+            -- HorizonXI-L / HorizonXI-R / FFXI / FFXI-R
+            if (gConfig.partyListStatusTheme == 0
+             or gConfig.partyListStatusTheme == 1
+             or gConfig.partyListStatusTheme == 3
+             or gConfig.partyListStatusTheme == 5) then
 
+				-- Split into buffs (top row) and debuffs (bottom row), skipping blacklisted IDs
+				-- (but NOT in preview mode)
+				local buffs   = {};
+				local debuffs = {};
+				local ignoreBlacklist = (memInfo.isPreview == true);
+				
+				for i = 0, #memInfo.buffs do
+					local id = memInfo.buffs[i];
+				
+					-- Skip invalid / sentinel values and (for non-preview) anything on the blacklist
+					if (id ~= nil and id ~= -1 and (ignoreBlacklist or not isStatusBlacklisted(id))) then
+						if (buffTable.IsBuff(id)) then
+							table.insert(buffs, id);
+						else
+							table.insert(debuffs, id);
+						end
+					end
+				end
+
+
+
+                -- HorizonXI themes draw buff/debuff backgrounds; FFXI themes do not
+                local drawBg = (gConfig.partyListStatusTheme == 0 or gConfig.partyListStatusTheme == 1);
+
+                ----------------------------------------------------------------
+                -- BUFF ROW (top)
+                ----------------------------------------------------------------
                 if (buffs ~= nil and #buffs > 0) then
-                    if (gConfig.partyListStatusTheme == 0 and buffWindowX[memIdx] ~= nil) then
-                        imgui.SetNextWindowPos({hpStartX - buffWindowX[memIdx] - settings.buffOffset , hpStartY - settings.iconSize*1.2});
-                    elseif (gConfig.partyListStatusTheme == 1 and fullMenuWidth[partyIndex] ~= nil) then
+                    -- Left-side: 0 = HorizonXI-L, 3 = FFXI
+                    if ((gConfig.partyListStatusTheme == 0 or gConfig.partyListStatusTheme == 3)
+                        and buffWindowX[memIdx] ~= nil) then
+                        imgui.SetNextWindowPos({
+                            hpStartX - buffWindowX[memIdx] - settings.buffOffset,
+                            hpStartY - settings.iconSize * 1.2
+                        });
+
+                    -- Right-side: 1 = HorizonXI-R, 5 = FFXI-R
+                    elseif ((gConfig.partyListStatusTheme == 1 or gConfig.partyListStatusTheme == 5)
+                        and fullMenuWidth[partyIndex] ~= nil) then
                         local thisPosX, _ = imgui.GetWindowPos();
-                        imgui.SetNextWindowPos({ thisPosX + fullMenuWidth[partyIndex], hpStartY - settings.iconSize * 1.2 });
+                        imgui.SetNextWindowPos({
+                            thisPosX + fullMenuWidth[partyIndex],
+                            hpStartY - settings.iconSize * 1.2
+                        });
                     end
-                    if (imgui.Begin('PlayerBuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings))) then
-                        imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {3, 1});
-                        DrawStatusIcons(buffs, settings.iconSize, 32, 1, true);
+
+                    if (imgui.Begin('PlayerBuffs'..memIdx, true,
+                        bit.bor(
+                            ImGuiWindowFlags_NoDecoration,
+                            ImGuiWindowFlags_AlwaysAutoResize,
+                            ImGuiWindowFlags_NoFocusOnAppearing,
+                            ImGuiWindowFlags_NoNav,
+                            ImGuiWindowFlags_NoBackground,
+                            ImGuiWindowFlags_NoSavedSettings
+                        ))) then
+
+                        imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, { 3, 1 });
+                        -- Same layout for all of these themes: one long row
+                        DrawStatusIcons(buffs, settings.iconSize, 32, 1, drawBg);
                         imgui.PopStyleVar(1);
                     end
+
                     local buffWindowSizeX, _ = imgui.GetWindowSize();
                     buffWindowX[memIdx] = buffWindowSizeX;
-    
                     imgui.End();
                 end
 
+                ----------------------------------------------------------------
+                -- DEBUFF ROW (bottom)
+                ----------------------------------------------------------------
                 if (debuffs ~= nil and #debuffs > 0) then
-                    if (gConfig.partyListStatusTheme == 0 and debuffWindowX[memIdx] ~= nil) then
-                        imgui.SetNextWindowPos({hpStartX - debuffWindowX[memIdx] - settings.buffOffset , hpStartY});
-                    elseif (gConfig.partyListStatusTheme == 1 and fullMenuWidth[partyIndex] ~= nil) then
+                    -- Left-side: 0 = HorizonXI-L, 3 = FFXI
+                    if ((gConfig.partyListStatusTheme == 0 or gConfig.partyListStatusTheme == 3)
+                        and debuffWindowX[memIdx] ~= nil) then
+                        imgui.SetNextWindowPos({
+                            hpStartX - debuffWindowX[memIdx] - settings.buffOffset,
+                            hpStartY
+                        });
+
+                    -- Right-side: 1 = HorizonXI-R, 5 = FFXI-R
+                    elseif ((gConfig.partyListStatusTheme == 1 or gConfig.partyListStatusTheme == 5)
+                        and fullMenuWidth[partyIndex] ~= nil) then
                         local thisPosX, _ = imgui.GetWindowPos();
-                        imgui.SetNextWindowPos({ thisPosX + fullMenuWidth[partyIndex], hpStartY });
+                        imgui.SetNextWindowPos({
+                            thisPosX + fullMenuWidth[partyIndex],
+                            hpStartY
+                        });
                     end
-                    if (imgui.Begin('PlayerDebuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings))) then
-                        imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {3, 1});
-                        DrawStatusIcons(debuffs, settings.iconSize, 32, 1, true);
+
+                    if (imgui.Begin('PlayerDebuffs'..memIdx, true,
+                        bit.bor(
+                            ImGuiWindowFlags_NoDecoration,
+                            ImGuiWindowFlags_AlwaysAutoResize,
+                            ImGuiWindowFlags_NoFocusOnAppearing,
+                            ImGuiWindowFlags_NoNav,
+                            ImGuiWindowFlags_NoBackground,
+                            ImGuiWindowFlags_NoSavedSettings
+                        ))) then
+
+                        imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, { 3, 1 });
+                        DrawStatusIcons(debuffs, settings.iconSize, 32, 1, drawBg);
                         imgui.PopStyleVar(1);
                     end
-                    local buffWindowSizeX, buffWindowSizeY = imgui.GetWindowSize();
-                    debuffWindowX[memIdx] = buffWindowSizeX;
+
+                    local debuffWindowSizeX, _ = imgui.GetWindowSize();
+                    debuffWindowX[memIdx] = debuffWindowSizeX;
                     imgui.End();
                 end
-            elseif (gConfig.partyListStatusTheme == 2) then
-                -- Draw FFXIV theme
-                local resetX, resetY = imgui.GetCursorScreenPos();
-                imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0} );
-                imgui.SetNextWindowPos({mpStartX, mpStartY - settings.iconSize - settings.xivBuffOffsetY})
-                if (imgui.Begin('XIVStatus'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings))) then
-                    imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {0, 0});
-                    DrawStatusIcons(memInfo.buffs, settings.iconSize, 32, 1);
-                    imgui.PopStyleVar(1);
-                end
-                imgui.PopStyleVar(1);
-                imgui.End();
-                imgui.SetCursorScreenPos({resetX, resetY});
-            elseif (gConfig.partyListStatusTheme == 3) then
-                if (buffWindowX[memIdx] ~= nil) then
-                    imgui.SetNextWindowPos({hpStartX - buffWindowX[memIdx] - settings.buffOffset , memberText[memIdx].name:GetPositionY() - settings.iconSize/2});
-                end
-                if (imgui.Begin('PlayerBuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings))) then
-                    imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {0, 3});
-                    DrawStatusIcons(memInfo.buffs, settings.iconSize, 7, 3);
-                    imgui.PopStyleVar(1);
-                end
-                local buffWindowSizeX, _ = imgui.GetWindowSize();
-                buffWindowX[memIdx] = buffWindowSizeX;
 
-                imgui.End();
-            end
+            elseif (gConfig.partyListStatusTheme == 2) then
+    local resetX, resetY = imgui.GetCursorScreenPos();
+    imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 } );
+    imgui.SetNextWindowPos({ mpStartX, mpStartY - settings.iconSize - settings.xivBuffOffsetY });
+    if (imgui.Begin('XIVStatus'..memIdx, true, flags)) then
+
+			-- Build a filtered list that respects the blacklist (except in preview)
+			local filtered = {};
+			local ignoreBlacklist = (memInfo.isPreview == true);
+			
+			if (memInfo.buffs ~= nil) then
+				for i = 0, #memInfo.buffs do
+					local id = memInfo.buffs[i];
+					if (id ~= nil and id ~= -1 and (ignoreBlacklist or not isStatusBlacklisted(id))) then
+						table.insert(filtered, id);
+					end
+				end
+			end
+
+
+        imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, { 0, 0 });
+        DrawStatusIcons(filtered, settings.iconSize, 32, 1);
+        imgui.PopStyleVar(1);
+    end
+    imgui.PopStyleVar(1);
+    imgui.End();
+    imgui.SetCursorScreenPos({ resetX, resetY });
+end
+
         end
     end
 
