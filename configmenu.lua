@@ -163,6 +163,18 @@ config.DrawWindow = function(us)
                 UpdateSettings();
             end
             imgui.ShowHelp('Always display the percent of HP remanining regardless if the target is an enemy or not.');
+			
+			if (imgui.Checkbox('Show Target Actions', { gConfig.showTargetActionTracker })) then
+				gConfig.showTargetActionTracker = not gConfig.showTargetActionTracker;
+				UpdateSettings();
+			end
+			imgui.ShowHelp('Show the current spell/ability line under the target bar.');
+            if (imgui.Checkbox('Show SP Timer in Name', { gConfig.targetBarShowSPName })) then
+                gConfig.targetBarShowSPName = not gConfig.targetBarShowSPName;
+                UpdateSettings();
+            end
+            imgui.ShowHelp('Show special ability timer overlay in the target name when a SP is active.');
+
             local scaleX = { gConfig.targetBarScaleX };
             if (imgui.SliderFloat('Scale X', scaleX, 0.1, 3.0, '%.1f')) then
                 gConfig.targetBarScaleX = scaleX[1];
@@ -188,6 +200,123 @@ config.DrawWindow = function(us)
                 gConfig.targetBarIconFontOffset = iconFontOffset[1];
                 UpdateSettings();
             end
+            imgui.EndChild();
+        end
+		        if (imgui.CollapsingHeader("Sub Target Bar")) then
+            imgui.BeginChild("SubTargetBarSettings", { 0, 270 }, true);
+
+			if (imgui.Checkbox('Enabled', { gConfig.subTargetBarLegacyBehavior })) then
+				gConfig.subTargetBarLegacyBehavior = not gConfig.subTargetBarLegacyBehavior;
+				UpdateSettings();
+			end
+
+            if (imgui.Checkbox('Show Distance', { gConfig.showSubTargetDistance })) then
+                gConfig.showSubTargetDistance = not gConfig.showSubTargetDistance;
+                UpdateSettings();
+            end
+
+            if (imgui.Checkbox('Show Bookends', { gConfig.showsubTargetBarBookends })) then
+                gConfig.showsubTargetBarBookends = not gConfig.showsubTargetBarBookends;
+                UpdateSettings();
+            end
+
+            local scaleX = { gConfig.subTargetBarScaleX };
+            if (imgui.SliderFloat('Scale X', scaleX, 0.1, 3.0, '%.1f')) then
+                gConfig.subTargetBarScaleX = scaleX[1];
+                UpdateSettings();
+            end
+
+            local scaleY = { gConfig.subTargetBarScaleY };
+            if (imgui.SliderFloat('Scale Y', scaleY, 0.1, 3.0, '%.1f')) then
+                gConfig.subTargetBarScaleY = scaleY[1];
+                UpdateSettings();
+            end
+
+            local fontOffset = { gConfig.subTargetBarFontOffset };
+            if (imgui.SliderInt('Font Scale', fontOffset, -5, 10)) then
+                gConfig.subTargetBarFontOffset = fontOffset[1];
+                UpdateSettings();
+            end
+
+            local iconScale = { gConfig.subTargetBarIconScale };
+            if (imgui.SliderFloat('Icon Scale', iconScale, 0.1, 3.0, '%.1f')) then
+                gConfig.subTargetBarIconScale = iconScale[1];
+                UpdateSettings();
+            end
+
+            imgui.EndChild();
+        end
+
+		    if (imgui.CollapsingHeader("Focus Bar")) then
+            imgui.BeginChild("FocusBarSettings", { 0, 270 }, true);
+            if (imgui.Checkbox('Enabled', { gConfig.showFocusTargetBar })) then
+                gConfig.showFocusTargetBar = not gConfig.showFocusTargetBar;
+                UpdateSettings();
+            end
+            if (imgui.Checkbox('Show Distance', { gConfig.showFocusDistance })) then
+                gConfig.showFocusDistance = not gConfig.showFocusDistance;
+                UpdateSettings();
+            end
+            if (imgui.Checkbox('Show Bookends', { gConfig.showFocusBarBookends })) then
+                gConfig.showFocusBarBookends = not gConfig.showFocusBarBookends;
+                UpdateSettings();
+            end
+            if (imgui.Checkbox('Hide During Events', { gConfig.focusBarHideDuringEvents })) then
+                gConfig.focusBarHideDuringEvents = not gConfig.focusBarHideDuringEvents;
+                UpdateSettings();
+            end
+            if (imgui.Checkbox('Show Enemy Id', { gConfig.showEnemyId })) then
+                gConfig.showEnemyId = not gConfig.showEnemyId;
+                UpdateSettings();
+            end
+            imgui.ShowHelp('Display the internal ID of the monster next to its name.');
+            if (imgui.Checkbox('Always Show Health Percent', { gConfig.alwaysShowHealthPercent })) then
+                gConfig.alwaysShowHealthPercent = not gConfig.alwaysShowHealthPercent;
+                UpdateSettings();
+            end
+            imgui.ShowHelp('Always display the percent of HP remaining regardless if the target is an enemy or not.');
+			if (imgui.Checkbox('Show Focus Actions', { gConfig.showFocusActionTracker })) then
+				gConfig.showFocusActionTracker = not gConfig.showFocusActionTracker;
+				UpdateSettings();
+			end
+			imgui.ShowHelp('Show the current spell/ability line under the focus bar.');
+            if (imgui.Checkbox('Show SP Timer in Name', { gConfig.focusBarShowSPName })) then
+                gConfig.focusBarShowSPName = not gConfig.focusBarShowSPName;
+                UpdateSettings();
+            end
+            imgui.ShowHelp('Show special ability timer overlay in the focus bar name when a SP is active.');
+
+            local scaleX = { gConfig.focusBarScaleX };
+            if (imgui.SliderFloat('Scale X', scaleX, 0.1, 3.0, '%.1f')) then
+                gConfig.focusBarScaleX = scaleX[1];
+                UpdateSettings();
+            end
+
+            local scaleY = { gConfig.focusBarScaleY };
+            if (imgui.SliderFloat('Scale Y', scaleY, 0.1, 3.0, '%.1f')) then
+                gConfig.focusBarScaleY = scaleY[1];
+                UpdateSettings();
+            end
+
+            local fontOffset = { gConfig.focusBarFontOffset };
+            if (imgui.SliderInt('Font Scale', fontOffset, -5, 10)) then
+                gConfig.focusBarFontOffset = fontOffset[1];
+                UpdateSettings();
+            end
+
+            local iconScale = { gConfig.focusBarIconScale };
+            if (imgui.SliderFloat('Icon Scale', iconScale, 0.1, 3.0, '%.1f')) then
+                gConfig.focusBarIconScale = iconScale[1];
+                UpdateSettings();
+            end
+
+            -- Shared with target bar; adjusts buff timer text under both bars
+            local iconFontOffset = { gConfig.targetBarIconFontOffset };
+            if (imgui.SliderInt('Icon Font Scale', iconFontOffset, -5, 10)) then
+                gConfig.targetBarIconFontOffset = iconFontOffset[1];
+                UpdateSettings();
+            end
+
             imgui.EndChild();
         end
         if (imgui.CollapsingHeader("Enemy List")) then
@@ -251,6 +380,10 @@ config.DrawWindow = function(us)
             local distance = { gConfig.partyListDistanceHighlight };
             if (imgui.SliderFloat('Distance Highlighting', distance, 0.0, 50.0, '%.1f')) then
                 gConfig.partyListDistanceHighlight = distance[1];
+                UpdateSettings();
+            end
+			if (imgui.Checkbox('Show SP Timer in Names', { gConfig.partyListShowSPName })) then
+                gConfig.partyListShowSPName = not gConfig.partyListShowSPName;
                 UpdateSettings();
             end
             if (imgui.Checkbox('Show Bookends', { gConfig.showPartyListBookends })) then
@@ -353,7 +486,8 @@ config.DrawWindow = function(us)
             comboBoxItems[2] = 'FFXIV';
             comboBoxItems[3] = 'FFXI';
             comboBoxItems[4] = 'Disabled';
-            gConfig.partyListStatusTheme = math.clamp(gConfig.partyListStatusTheme, 0, 4);
+			comboBoxItems[5] = 'FFXI-R';
+            gConfig.partyListStatusTheme = math.clamp(gConfig.partyListStatusTheme, 0, 5);
             if(imgui.BeginCombo('Status Theme', comboBoxItems[gConfig.partyListStatusTheme])) then
                 for i = 0,#comboBoxItems do
                     local is_selected = i == gConfig.partyListStatusTheme;
@@ -369,11 +503,20 @@ config.DrawWindow = function(us)
                 imgui.EndCombo();
             end
 
-            local buffScale = { gConfig.partyListBuffScale };
+                        local buffScale = { gConfig.partyListBuffScale };
             if (imgui.SliderFloat('Status Icon Scale', buffScale, 0.1, 3.0, '%.1f')) then
                 gConfig.partyListBuffScale = buffScale[1];
                 UpdateSettings();
             end
+
+            -- NEW: status blacklist editor
+            local blacklistStr = { gConfig.partyListStatusBlacklist or '' };
+            if (imgui.InputText('Status Blacklist##PartyList', blacklistStr, 512)) then
+                gConfig.partyListStatusBlacklist = blacklistStr[1];
+                UpdateSettings();
+            end
+            imgui.ShowHelp('Comma-separated list of status IDs to HIDE from the party list. Example: 71, 72, 73');
+
             imgui.EndChild();
 
             if true then
