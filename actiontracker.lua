@@ -378,6 +378,36 @@ end
 -- 0x28: handle action packet (HXUI already calls this)
 ----------------------------------------------------------------------
 
+-- Helper to store SPs keyed by serverId (same key that GetSpecialForTargetIndex uses)
+local function set_special_for_actor(actorId, abilityName)
+    if (actorId == nil or actorId == 0) then
+        return;
+    end
+    if (abilityName == nil or abilityName == '') then
+        return;
+    end
+
+    -- CRITICAL FIX: Strip NULL bytes and control characters from ability name
+    -- The game sends ability names with NULL terminators (0x00) which breaks Lua string comparison
+    abilityName = abilityName:gsub('%z', '');  -- Remove NULL bytes (0x00)
+    abilityName = abilityName:gsub('[\1-\31]', '');  -- Remove other control characters
+
+    local spDuration = specialAbilityDurations[abilityName];
+    if (spDuration == nil or spDuration <= 0) then
+        return;
+    end
+
+    -- Simply use the actorId directly as the key.
+    -- Don't do any conversion - just trust what we're given.
+    local serverId = actorId;
+
+    actionTracker.specials[serverId] = {
+        name      = abilityName,
+        expiresAt = os.clock() + spDuration,
+    };
+end
+
+
 function actionTracker.HandleActionPacket(actionPacket)
     if (actionPacket == nil) then
         return;
@@ -528,19 +558,14 @@ function actionTracker.HandleActionPacket(actionPacket)
                     end
                 end
             end
-			------------------------------------------------------------------
-			-- Bars-style tracking of long-duration special abilities (SPs)
-			------------------------------------------------------------------
-			local entry = actionTracker.actions[actorId];
-			if (entry ~= nil and entry.actionName ~= nil and entry.actionName ~= '') then
-				local spDuration = specialAbilityDurations[entry.actionName];
-				if (spDuration ~= nil and spDuration > 0) then
-					actionTracker.specials[actorId] = {
-						name      = entry.actionName,
-						expiresAt = os.clock() + spDuration,
-					};
-				end
-			end
+------------------------------------------------------------------
+-- Bars-style tracking of long-duration special abilities (SPs)
+------------------------------------------------------------------
+local entry = actionTracker.actions[actorId];
+if (entry ~= nil and entry.actionName ~= nil and entry.actionName ~= '') then
+    set_special_for_actor(actorId, entry.actionName);
+end
+
 
             return;
         end
@@ -668,19 +693,14 @@ function actionTracker.HandleActionPacket(actionPacket)
     end
 
     ------------------------------------------------------------------
-    -- Bars-style tracking of long-duration special abilities (SPs)
-    -- This now runs for results too (Types 3 / 6 / 11 / etc.),
-    -- so things like your own Chainspell get tracked.
-    ------------------------------------------------------------------
-    if (entry ~= nil and entry.actionName ~= nil and entry.actionName ~= '') then
-        local spDuration = specialAbilityDurations[entry.actionName];
-        if (spDuration ~= nil and spDuration > 0) then
-            actionTracker.specials[actorId] = {
-                name      = entry.actionName,
-                expiresAt = os.clock() + spDuration,
-            };
-        end
-    end
+-- Bars-style tracking of long-duration special abilities (SPs)
+-- This now runs for results too (Types 3 / 6 / 11 / etc.),
+-- so things like your own Chainspell get tracked.
+------------------------------------------------------------------
+if (entry ~= nil and entry.actionName ~= nil and entry.actionName ~= '') then
+    set_special_for_actor(actorId, entry.actionName);
+end
+
 
     ------------------------------------------------------------------
     -- Completed vs interrupted
@@ -768,41 +788,55 @@ local function handle_text_in_readies(e)
         return;
     end
 
-    local actorId, actorType = FindServerIdByName(actorName);
-    if (actorId == nil or actorId == 0) then
-        return;
+    -- Monsters in the log are often "The <Name>", but the actual entity
+    -- name is just "<Name>". Strip the "The " prefix so we can match.
+    actorName = actorName:gsub('^The%s+', '');
+
+local actorId, actorType = FindServerIdByName(actorName);
+
+------------------------------------------------------------------
+-- If this log line is an SP (e.g. "Perfect Dodge", "Mighty Strikes"),
+-- always track it if we found the actor.
+------------------------------------------------------------------
+if specialAbilityDurations[abilityName] ~= nil and actorId ~= nil and actorId ~= 0 then
+    set_special_for_actor(actorId, abilityName);
+end
+
+if (actorId == nil or actorId == 0) then
+    return;
+end
+
+------------------------------------------------------------------
+-- If we already have a packet-based entry (from Type 7/8/3/6/11),
+-- just update the actionName from text (in case packet had none).
+------------------------------------------------------------------
+local entry = actionTracker.actions[actorId];
+if (entry ~= nil) then
+    if (entry.actionName == nil or entry.actionName == '') then
+        entry.actionName = abilityName;
     end
 
-    ------------------------------------------------------------------
-    -- If we already have a packet-based entry (from Type 7/8/3/6/11),
-    -- just update the actionName from text (in case packet had none).
-    -- This also applies to "uses" / "casts" which can fill in missing
-    -- names.
-    ------------------------------------------------------------------
-    local entry = actionTracker.actions[actorId];
-    if (entry ~= nil) then
-        if (entry.actionName == nil or entry.actionName == '') then
-            entry.actionName = abilityName;
-        end
-
-        -- Update status if it's a "readies" line (Type 7 scenario).
-        if (entry.status ~= 'casting' and msg:match('readies') ~= nil) then
-            entry.status    = 'casting';
-            entry.startedAt = os.clock();
-            entry.expiresAt = nil;
-        end
-        return;
+    -- Update status if it's a "readies" line (Type 7 scenario).
+    if (entry.status ~= 'casting' and msg:match('readies') ~= nil) then
+        entry.status    = 'casting';
+        entry.startedAt = os.clock();
+        entry.expiresAt = nil;
     end
+    return;
+end
+
 
     ------------------------------------------------------------------
     -- Otherwise, if no packet-based entry yet, create one.
     -- This can happen in a few edge cases (or if the action packet
     -- was dropped).
     ------------------------------------------------------------------
-    if (msg:match('readies') ~= nil or msg:match('starts casting') ~= nil) then
-        -- Text-only fallback: name but unknown target until the packet arrives.
-        mark_casting(actorId, abilityName, nil);
-    end
+if (msg:match('readies') ~= nil or msg:match('starts casting') ~= nil) then
+    -- Text-only fallback: name but unknown target until the packet arrives.
+    mark_casting(actorId, abilityName, nil);
+end
+
+
 end
 
 ----------------------------------------------------------------------
