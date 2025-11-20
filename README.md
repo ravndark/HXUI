@@ -1,4 +1,4 @@
-# Rag's HXUI
+# Updated HXUI
 
 This is a fork of Rag's HXUI (https://github.com/yzyii/HXUI)
 
@@ -14,3 +14,5 @@ It includes the following:
 - Added an SP ability tracker.  Tracks SP/2hr abilities on the target/focus and party list.  If a 2hr/SP ability is active on the target (Monster or Player) it will flash and rotate between the name and 2hr/SP ability.  Includes a timer to show how long it lasts.
 - Changed colors of Bars to stand out a little more.  Blue = Player / White = Player / Cyan = Party/Alliance / Red = Claimed Mob / Pinkish = Alliance claimed / Purplish = Claimed by other.  Party List still uses the the original HXUI color.
 - More planned
+
+**_These Features are being added with the use of AI_**
