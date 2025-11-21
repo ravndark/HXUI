@@ -31,6 +31,7 @@ addon.link      = 'https://github.com/tirem/HXUI'
 require('common');
 local settings          = require('settings');
 local playerBar         = require('playerbar');
+local petBar           = require('petbar');
 local targetBar         = require('targetbar');
 local enemyList         = require('enemylist');
 local expBar            = require('expbar');
@@ -47,6 +48,7 @@ local gdi               = require('gdifonts.include');
 local focusBar         	= require('focusbar');
 local subTargetBar		= require('subtargetbar');
 
+
 ----------------------------------------------------------------
 -- User settings (persisted)
 ----------------------------------------------------------------
@@ -60,6 +62,7 @@ T{
     hideDuringEvents = true,
 
     showPlayerBar = true,
+	showPetBar = true,
     showTargetBar = true,
     showFocusTargetBar  = true,
 	showsubTargetBar  = true,
@@ -77,6 +80,7 @@ T{
 
     showPartyListWhenSolo = false,
     maxEnemyListEntries = 8,
+    hideEnemyListUnderTwo = false,
 
     playerBarScaleX = 1,
     playerBarScaleY = 1,
@@ -84,6 +88,13 @@ T{
     showPlayerBarBookends = true,
     alwaysShowMpBar = true,
     playerBarHideDuringEvents = true,
+
+    petBarScaleX = 1,
+    petBarScaleY = 1,
+    petBarFontOffset = 0,
+    petBarHideDuringEvents = true,
+    petBarShowPercent = true,
+	petBarShowName    = true,
 
     targetBarScaleX = 1,
     targetBarScaleY = 1,
@@ -123,15 +134,22 @@ T{
     focusBarHideDuringEvents = true,
 
 
+    -- Enemy List
     enemyListScaleX = 1,
     enemyListScaleY = 1,
     enemyListFontScale = 1,
     enemyListIconScale = 1,
+    enemyListDebuffScale = 1,
+    enemyListBgAlpha = 0.4,
+    enemyListStatusTheme = 2,
+    enemyListEntrySpacing = 0,
+    enemyListGrowUpwards = false,
+    enemyListShowSPPulse = true,
     showEnemyDistance = false,
     showEnemyHPPText = true,
     showEnemyListBookends = true,
 
-    expBarTextScaleX = 1,
+    -- Exp Bar
     expBarScaleX = 1,
     expBarScaleY = 1,
     showExpBarBookends = true,
@@ -176,7 +194,7 @@ T{
     partyList3TP = false,
 
     partyListBuffScale = 1,
-    partyListStatusTheme = 0, -- 0: HorizonXI-L, 1: HorizonXI-R 2: XIV1.0, 3: XIV, 4: Disabled, 5: FFXI-R
+    partyListStatusTheme = 0, -- 0: HorizonXI-L, 1: HorizonXI-R, 2: FFXIV, 3: FFXI, 4: FFXI-R, 5: Disabled
     partyListTheme = 0,
     partyListFlashTP = false,
     showPartyListBookends = true,
@@ -514,6 +532,7 @@ T{
         bgTopPadding = -3;
         maxIcons = 5;
         iconSize = 18;
+        debuffIconSize = 18;
         debuffOffsetX = -10;
         debuffOffsetY = 0;
     };
@@ -787,6 +806,9 @@ local function CheckVisibility()
     if not gConfig.showPlayerBar then
         playerBar.SetHidden(true);
     end
+    if not gConfig.showPetBar then
+        petBar.SetHidden(true);
+    end
     if not gConfig.showExpBar then
         expBar.SetHidden(true);
     end
@@ -809,6 +831,7 @@ end
 
 local function ForceHide()
     playerBar.SetHidden(true);
+	petBar.SetHidden(true);
     targetBar.SetHidden(true);
     expBar.SetHidden(true);
     gilTracker.SetHidden(true);
@@ -819,6 +842,7 @@ end
 
 local function UpdateFonts()
     playerBar.UpdateFonts(gAdjustedSettings.playerBarSettings);
+    petBar.UpdateFonts(gAdjustedSettings.petBarSettings);
     targetBar.UpdateFonts(gAdjustedSettings.targetBarSettings);
 	subTargetBar.UpdateFonts(gAdjustedSettings.subTargetBarSettings);
     focusBar.UpdateFonts(gAdjustedSettings.focusBarSettings);
@@ -897,6 +921,28 @@ local function UpdateUserSettings()
     gAdjustedSettings.playerBarSettings.font_settings.font_height =
         math.max(ds.playerBarSettings.font_settings.font_height + us.playerBarFontOffset, 1);
 
+    -- Pet bar 
+    if (gAdjustedSettings.petBarSettings == nil) then
+        gAdjustedSettings.petBarSettings = T{
+            barWidth     = ds.playerBarSettings.barWidth,
+            barSpacing   = ds.playerBarSettings.barSpacing,
+            barHeight    = ds.playerBarSettings.barHeight,
+            textYOffset  = ds.playerBarSettings.textYOffset,
+            font_settings = deep_copy_table(ds.playerBarSettings.font_settings),
+        };
+    end
+
+    local petBarScaleX = us.petBarScaleX or 1;
+    local petBarScaleY = us.petBarScaleY or 1;
+
+    gAdjustedSettings.petBarSettings.barWidth  = ds.playerBarSettings.barWidth  * petBarScaleX;
+    gAdjustedSettings.petBarSettings.barSpacing = ds.playerBarSettings.barSpacing * petBarScaleX;
+    gAdjustedSettings.petBarSettings.barHeight = ds.playerBarSettings.barHeight * petBarScaleY;
+    gAdjustedSettings.petBarSettings.textYOffset = ds.playerBarSettings.textYOffset;
+
+    gAdjustedSettings.petBarSettings.font_settings.font_height =
+        math.max(ds.playerBarSettings.font_settings.font_height + (us.petBarFontOffset or 0), 1);
+
     -- Exp Bar
     gAdjustedSettings.expBarSettings.textWidth = ds.expBarSettings.textWidth * us.expBarTextScaleX;
     gAdjustedSettings.expBarSettings.barWidth  = ds.expBarSettings.barWidth * us.expBarScaleX;
@@ -948,6 +994,10 @@ local function UpdateUserSettings()
         ds.enemyListSettings.textScale * us.enemyListFontScale;
     gAdjustedSettings.enemyListSettings.iconSize =
         ds.enemyListSettings.iconSize * us.enemyListIconScale;
+    gAdjustedSettings.enemyListSettings.debuffIconSize =
+        ds.enemyListSettings.debuffIconSize * us.enemyListDebuffScale;
+    gAdjustedSettings.enemyListSettings.entrySpacing =
+        ds.enemyListSettings.entrySpacing + us.enemyListEntrySpacing;
 
     -- Cast Bar
     gAdjustedSettings.castBarSettings.barWidth =
@@ -1057,7 +1107,11 @@ ashita.events.register('d3d_present', 'present_cb', function ()
         else
             playerBar.DrawWindow(gAdjustedSettings.playerBarSettings);
         end
-
+        if (not gConfig.showPetBar or (gConfig.petBarHideDuringEvents and eventSystemActive)) then
+            petBar.SetHidden(true);
+        else
+            petBar.DrawWindow(gAdjustedSettings.petBarSettings);
+        end
         if (not gConfig.showTargetBar or (gConfig.targetBarHideDuringEvents and eventSystemActive)) then
             targetBar.SetHidden(true);
         else
@@ -1119,6 +1173,7 @@ end);
 ashita.events.register('load', 'load_cb', function ()
     UpdateUserSettings();
     playerBar.Initialize(gAdjustedSettings.playerBarSettings);
+    petBar.Initialize(gAdjustedSettings.petBarSettings);
     targetBar.Initialize(gAdjustedSettings.targetBarSettings);
 	focusBar.Initialize(gAdjustedSettings.focusBarSettings);
 	subTargetBar.Initialize(gAdjustedSettings.subTargetBarSettings);
