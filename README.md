@@ -13,6 +13,8 @@ It includes the following:
   - Buffs are now visible when you have the config menu open and it shows random buffs and debuffs (at least one of each) so you can see how the status theme looks without closing the config menu.
 - Added an SP ability tracker.  Tracks SP/2hr abilities on the target/focus and party list.  If a 2hr/SP ability is active on the target (Monster or Player) it will flash and rotate between the name and 2hr/SP ability.  Includes a timer to show how long it lasts.
 - Changed colors of Bars to stand out a little more.  Blue = Player / White = Player / Cyan = Party/Alliance / Red = Claimed Mob / Pinkish = Alliance claimed / Purplish = Claimed by other.  Party List still uses the the original HXUI color.
+- Added Pet Bar
+- Added SP features to Enemylist, as well as new optiotns in the config menu for custotmtization
 - More planned
 
 **_These Features are being added with the use of AI_**
