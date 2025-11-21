@@ -160,7 +160,7 @@ updatePartyCache();
             if (isPartyClaim) then
                 color = 0xFFFF6666;  -- Bars monster_claimed_party (255,50,50)
             elseif (isAllianceClaim) then
-                color = 0xFFFF5C72;  -- Bars monster_claimed_alliance (255,92,114)
+                color = 0xFFFF328C;  -- Bars monster_claimed_alliance (255,92,114)
             else
                 color = 0xFFD36BD3;  -- Bars monster_claimed_other (211,107,211)
             end

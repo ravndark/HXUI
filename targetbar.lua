@@ -1,3 +1,8 @@
+--[[
+    Target Bar Module
+    Displays HP bar, status effects, and action tracker for the current target.
+]]
+
 require('common');
 require('helpers');
 local imgui = require('imgui');
@@ -11,24 +16,30 @@ local actionTextRight;
 local actionResultText;
 local actionTracker = require('actiontracker');
 
--- TODO: Calculate these instead of manually setting them
+---------------------------------------------------------------------------
+-- Constants
+---------------------------------------------------------------------------
+local BG_ALPHA = 0.4;
+local BG_RADIUS = 3;
 
-local bgAlpha = 0.4;
-local bgRadius = 3;
-
+---------------------------------------------------------------------------
+-- Local State
+---------------------------------------------------------------------------
 local arrowTexture;
 local percentText;
 local nameText;
 local totNameText;
 local distText;
+
 local targetbar = {
     interpolation = {},
-
-    -- Bars-style pulse state for SP-active target names
-    spPulseAlpha        = 255,
-    spPulseDirectionUp  = true,
+    spPulseAlpha = 255,
+    spPulseDirectionUp = true,
 };
 
+---------------------------------------------------------------------------
+-- Helper Functions
+---------------------------------------------------------------------------
 
 local function UpdateTextVisibility(visible)
 	percentText:SetVisible(visible);
@@ -46,11 +57,9 @@ local function UpdateTextVisibility(visible)
 	end
 end
 
-local _HXUI_DEV_DEBUG_INTERPOLATION = false;
-local _HXUI_DEV_DEBUG_INTERPOLATION_DELAY = 1;
-local _HXUI_DEV_DEBUG_HP_PERCENT_PERSISTENT = 100;
-local _HXUI_DEV_DAMAGE_SET_TIMES = {};
-
+---------------------------------------------------------------------------
+-- Main Draw Function
+---------------------------------------------------------------------------
 targetbar.DrawWindow = function(settings)
     -- Obtain the player entity..
     local playerEnt = GetPlayerEntity();
@@ -112,43 +121,7 @@ targetbar.DrawWindow = function(settings)
     end
 
 	local currentTime = os.clock();
-
 	local hppPercent = targetEntity.HPPercent;
-
-	-- Mimic damage taken
-	if _HXUI_DEV_DEBUG_INTERPOLATION then
-		if _HXUI_DEV_DAMAGE_SET_TIMES[1] and currentTime > _HXUI_DEV_DAMAGE_SET_TIMES[1][1] then
-			_HXUI_DEV_DEBUG_HP_PERCENT_PERSISTENT = _HXUI_DEV_DAMAGE_SET_TIMES[1][2];
-
-			table.remove(_HXUI_DEV_DAMAGE_SET_TIMES, 1);
-		end
-
-		if #_HXUI_DEV_DAMAGE_SET_TIMES == 0 then
-			local previousHitTime = currentTime + 1;
-			local previousHp = 100;
-
-			local totalDamageInstances = 10;
-
-			for i = 1, totalDamageInstances do
-				local hitDelay = math.random(0.25 * 100, 1.25 * 100) / 100;
-				local damageAmount = math.random(1, 20);
-
-				if i > 1 and i < totalDamageInstances then
-					previousHp = math.max(previousHp - damageAmount, 0);
-				end
-
-				if i < totalDamageInstances then
-					previousHitTime = previousHitTime + hitDelay;
-				else
-					previousHitTime = previousHitTime + _HXUI_DEV_DEBUG_INTERPOLATION_DELAY;
-				end
-
-				_HXUI_DEV_DAMAGE_SET_TIMES[i] = {previousHitTime, previousHp};
-			end
-		end
-
-		hppPercent = _HXUI_DEV_DEBUG_HP_PERCENT_PERSISTENT;
-	end
 
 	-- If we change targets, reset the interpolation
 	if targetbar.interpolation.currentTargetId ~= targetIndex then
@@ -278,10 +251,6 @@ targetbar.DrawWindow = function(settings)
         local hpGradientEnd   = hpGradientStart;
 
         local hpPercentData = {{targetEntity.HPPercent / 100, {hpGradientStart, hpGradientEnd}}};
-
-		if _HXUI_DEV_DEBUG_INTERPOLATION then
-			hpPercentData[1][1] = targetbar.interpolation.currentHpp / 100;
-		end
 
 		if targetbar.interpolation.interpolationDamagePercent > 0 then
 			local interpolationOverlay;
@@ -578,6 +547,10 @@ targetbar.DrawWindow = function(settings)
 	local winPosX, winPosY = imgui.GetWindowPos();
     imgui.End();
 end
+
+---------------------------------------------------------------------------
+-- Initialization and Lifecycle
+---------------------------------------------------------------------------
 
 targetbar.Initialize = function(settings)
     percentText = fonts.new(settings.percent_font_settings);

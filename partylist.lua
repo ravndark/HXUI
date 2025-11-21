@@ -1,3 +1,8 @@
+--[[
+    Party List Module
+    Displays HP/MP/TP bars and status effects for party members.
+]]
+
 require('common');
 local imgui           = require('imgui');
 local fonts           = require('fonts');
@@ -10,6 +15,9 @@ local encoding        = require('gdifonts.encoding');
 local ashita_settings = require('settings');
 local actionTracker   = require('actiontracker');
 
+---------------------------------------------------------------------------
+-- Local State
+---------------------------------------------------------------------------
 local fullMenuWidth  = {};
 local fullMenuHeight = {};
 local buffWindowX    = {};
