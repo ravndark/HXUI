@@ -135,8 +135,77 @@ config.DrawWindow = function(us)
             end
             imgui.EndChild();
         end
+        if (imgui.CollapsingHeader("Pet Bar")) then
+            imgui.BeginChild("PetBarSettings", { 0, 210 }, true);
+
+            if (imgui.Checkbox('Enabled', { gConfig.showPetBar })) then
+                gConfig.showPetBar = not gConfig.showPetBar;
+                UpdateSettings();
+            end
+
+            -- Pet Name Position dropdown
+            local petNamePositions = { 'Disabled', 'Side', 'Top', 'Bottom' };
+            local currentPosition = gConfig.petBarNamePosition or 'Side';
+            if (imgui.BeginCombo('Pet Name Position', currentPosition)) then
+                for i = 1, #petNamePositions do
+                    local is_selected = petNamePositions[i] == currentPosition;
+                    if (imgui.Selectable(petNamePositions[i], is_selected)) then
+                        gConfig.petBarNamePosition = petNamePositions[i];
+                        UpdateSettings();
+                    end
+                    if (is_selected) then
+                        imgui.SetItemDefaultFocus();
+                    end
+                end
+                imgui.EndCombo();
+            end
+            imgui.ShowHelp('Position of the pet name: Disabled (hidden), Side (left of bar), Top (above bar), Bottom (below bar).');
+			
+            -- Pet Health Percent Position dropdown
+            local petPercentPositions = { 'Disabled', 'Side', 'Top', 'Bottom' };
+            local currentPercentPosition = gConfig.petBarPercentPosition or 'Side';
+            if (imgui.BeginCombo('Health Percent Position', currentPercentPosition)) then
+                for i = 1, #petPercentPositions do
+                    local is_selected = petPercentPositions[i] == currentPercentPosition;
+                    if (imgui.Selectable(petPercentPositions[i], is_selected)) then
+                        gConfig.petBarPercentPosition = petPercentPositions[i];
+                        UpdateSettings();
+                    end
+                    if (is_selected) then
+                        imgui.SetItemDefaultFocus();
+                    end
+                end
+                imgui.EndCombo();
+            end
+            imgui.ShowHelp('Position of the health percent: Disabled (hidden), Side (right of bar), Top (above bar), Bottom (below bar).');
+			
+			if (imgui.Checkbox('Hide During Events', { gConfig.petBarHideDuringEvents })) then
+                gConfig.petBarHideDuringEvents = not gConfig.petBarHideDuringEvents;
+                UpdateSettings();
+            end
+
+            local petScaleX = { gConfig.petBarScaleX };
+            if (imgui.SliderFloat('Scale X', petScaleX, 0.1, 3.0, '%.1f')) then
+                gConfig.petBarScaleX = petScaleX[1];
+                UpdateSettings();
+            end
+
+            local petScaleY = { gConfig.petBarScaleY };
+            if (imgui.SliderFloat('Scale Y', petScaleY, 0.1, 3.0, '%.1f')) then
+                gConfig.petBarScaleY = petScaleY[1];
+                UpdateSettings();
+            end
+
+            local petFontOffset = { gConfig.petBarFontOffset };
+            if (imgui.SliderInt('Font Scale', petFontOffset, -5, 10)) then
+                gConfig.petBarFontOffset = petFontOffset[1];
+                UpdateSettings();
+            end
+
+            imgui.EndChild();
+        end
         if (imgui.CollapsingHeader("Target Bar")) then
-            imgui.BeginChild("TargetBarSettings", { 0, 270 }, true);
+            imgui.BeginChild("TargetBarSettings", { 0, 380 }, true);
             if (imgui.Checkbox('Enabled', { gConfig.showTargetBar })) then
                 gConfig.showTargetBar = not gConfig.showTargetBar;
                 UpdateSettings();
@@ -203,7 +272,7 @@ config.DrawWindow = function(us)
             imgui.EndChild();
         end
 		        if (imgui.CollapsingHeader("Sub Target Bar")) then
-            imgui.BeginChild("SubTargetBarSettings", { 0, 270 }, true);
+            imgui.BeginChild("SubTargetBarSettings", { 0, 220 }, true);
 
 			if (imgui.Checkbox('Enabled', { gConfig.subTargetBarLegacyBehavior })) then
 				gConfig.subTargetBarLegacyBehavior = not gConfig.subTargetBarLegacyBehavior;
@@ -248,7 +317,7 @@ config.DrawWindow = function(us)
         end
 
 		    if (imgui.CollapsingHeader("Focus Bar")) then
-            imgui.BeginChild("FocusBarSettings", { 0, 270 }, true);
+            imgui.BeginChild("FocusBarSettings", { 0, 390 }, true);
             if (imgui.Checkbox('Enabled', { gConfig.showFocusTargetBar })) then
                 gConfig.showFocusTargetBar = not gConfig.showFocusTargetBar;
                 UpdateSettings();
@@ -320,43 +389,124 @@ config.DrawWindow = function(us)
             imgui.EndChild();
         end
         if (imgui.CollapsingHeader("Enemy List")) then
-            imgui.BeginChild("EnemyListSettings", { 0, 180 }, true);
+            imgui.BeginChild("EnemyListSettings", { 0, 450 }, true);
+
+            -- Enable/Disable
             if (imgui.Checkbox('Enabled', { gConfig.showEnemyList })) then
                 gConfig.showEnemyList = not gConfig.showEnemyList;
                 UpdateSettings();
             end
+
+            imgui.Separator();
+
+            -- Display Toggles
             if (imgui.Checkbox('Show Distance', { gConfig.showEnemyDistance })) then
                 gConfig.showEnemyDistance = not gConfig.showEnemyDistance;
                 UpdateSettings();
             end
+
             if (imgui.Checkbox('Show HP% Text', { gConfig.showEnemyHPPText })) then
                 gConfig.showEnemyHPPText = not gConfig.showEnemyHPPText;
                 UpdateSettings();
             end
+
             if (imgui.Checkbox('Show Bookends', { gConfig.showEnemyListBookends })) then
                 gConfig.showEnemyListBookends = not gConfig.showEnemyListBookends;
                 UpdateSettings();
             end
+
+            if (imgui.Checkbox('Show SP Pulse Effect', { gConfig.enemyListShowSPPulse })) then
+                gConfig.enemyListShowSPPulse = not gConfig.enemyListShowSPPulse;
+                UpdateSettings();
+            end
+            imgui.ShowHelp('Enemy names pulse when they use a special ability.');
+
+            imgui.Separator();
+
+            -- Behavior Toggles
+            if (imgui.Checkbox('Hide When Less Than 2 Enemies', { gConfig.hideEnemyListUnderTwo })) then
+                gConfig.hideEnemyListUnderTwo = not gConfig.hideEnemyListUnderTwo;
+                UpdateSettings();
+            end
+            imgui.ShowHelp('Only show the enemy list when there are 2 or more enemies.');
+
+            if (imgui.Checkbox('Grow Upwards', { gConfig.enemyListGrowUpwards })) then
+                gConfig.enemyListGrowUpwards = not gConfig.enemyListGrowUpwards;
+                UpdateSettings();
+            end
+            imgui.ShowHelp('New enemies appear above earlier ones; window grows upward.');
+
+            imgui.Separator();
+
+            -- Dropdowns
+            local statusThemeItems = T{
+                [0] = 'HorizonXI-L',
+                [1] = 'HorizonXI-R',
+                [2] = 'FFXI',
+                [3] = 'FFXI-R',
+                [4] = 'Disabled'
+            };
+            gConfig.enemyListStatusTheme = math.clamp(gConfig.enemyListStatusTheme, 0, 4);
+            if (imgui.BeginCombo('Status Theme', statusThemeItems[gConfig.enemyListStatusTheme])) then
+                for i = 0, #statusThemeItems do
+                    local is_selected = (i == gConfig.enemyListStatusTheme);
+                    if (imgui.Selectable(statusThemeItems[i], is_selected) and gConfig.enemyListStatusTheme ~= i) then
+                        gConfig.enemyListStatusTheme = i;
+                        UpdateSettings();
+                    end
+                    if (is_selected) then
+                        imgui.SetItemDefaultFocus();
+                    end
+                end
+                imgui.EndCombo();
+            end
+            imgui.ShowHelp('Theme for debuff icons on enemies.');
+
+            imgui.Separator();
+
+            -- Sliders
+            local entrySpacing = { gConfig.enemyListEntrySpacing };
+            if (imgui.SliderInt('Entry Spacing', entrySpacing, -10, 30)) then
+                gConfig.enemyListEntrySpacing = entrySpacing[1];
+                UpdateSettings();
+            end
+
+            local bgAlpha = { gConfig.enemyListBgAlpha };
+            if (imgui.SliderFloat('Background Alpha', bgAlpha, 0.0, 1.0, '%.2f')) then
+                gConfig.enemyListBgAlpha = bgAlpha[1];
+                UpdateSettings();
+            end
+
             local scaleX = { gConfig.enemyListScaleX };
             if (imgui.SliderFloat('Scale X', scaleX, 0.1, 3.0, '%.1f')) then
                 gConfig.enemyListScaleX = scaleX[1];
                 UpdateSettings();
             end
+
             local scaleY = { gConfig.enemyListScaleY };
             if (imgui.SliderFloat('Scale Y', scaleY, 0.1, 3.0, '%.1f')) then
                 gConfig.enemyListScaleY = scaleY[1];
                 UpdateSettings();
             end
+
             local fontScale = { gConfig.enemyListFontScale };
             if (imgui.SliderFloat('Font Scale', fontScale, 0.1, 3.0, '%.1f')) then
                 gConfig.enemyListFontScale = fontScale[1];
                 UpdateSettings();
             end
+
             local iconScale = { gConfig.enemyListIconScale };
             if (imgui.SliderFloat('Icon Scale', iconScale, 0.1, 3.0, '%.1f')) then
                 gConfig.enemyListIconScale = iconScale[1];
                 UpdateSettings();
             end
+
+            local debuffScale = { gConfig.enemyListDebuffScale };
+            if (imgui.SliderFloat('Debuff Icon Scale', debuffScale, 0.1, 3.0, '%.1f')) then
+                gConfig.enemyListDebuffScale = debuffScale[1];
+                UpdateSettings();
+            end
+
             imgui.EndChild();
         end
         if (imgui.CollapsingHeader("Party List")) then
@@ -485,8 +635,8 @@ config.DrawWindow = function(us)
             comboBoxItems[1] = 'HorizonXI-R';
             comboBoxItems[2] = 'FFXIV';
             comboBoxItems[3] = 'FFXI';
-            comboBoxItems[4] = 'Disabled';
-			comboBoxItems[5] = 'FFXI-R';
+            comboBoxItems[4] = 'FFXI-R';
+            comboBoxItems[5] = 'Disabled';
             gConfig.partyListStatusTheme = math.clamp(gConfig.partyListStatusTheme, 0, 5);
             if(imgui.BeginCombo('Status Theme', comboBoxItems[gConfig.partyListStatusTheme])) then
                 for i = 0,#comboBoxItems do
@@ -763,7 +913,7 @@ config.DrawWindow = function(us)
             imgui.EndChild();
         end
         if (imgui.CollapsingHeader("Cast Bar")) then
-            imgui.BeginChild("CastBarSettings", { 0, 160 }, true);
+            imgui.BeginChild("CastBarSettings", { 0, 320 }, true);
             if (imgui.Checkbox('Enabled', { gConfig.showCastBar })) then
                 gConfig.showCastBar = not gConfig.showCastBar;
                 UpdateSettings();
