@@ -65,8 +65,12 @@ focusbar.DrawWindow = function(settings)
     -- Obtain the focus target entity (independent of current target)
     local focusIndex, focusEntity = GetFocusTargetEntity();
 
+    -- Track if we're in preview mode (showing placeholder when no real focus exists)
+    local isPreviewMode = false;
+
     -- If we don't have a focus target, but the config is open, use the player as a preview target.
     if (focusEntity == nil or focusEntity.Name == nil) and isConfigOpen then
+        isPreviewMode = true;
         local party = AshitaCore:GetMemoryManager():GetParty();
         if (party ~= nil) then
             local playerIndex = party:GetMemberTargetIndex(0);
@@ -196,10 +200,18 @@ focusbar.DrawWindow = function(settings)
 
     if imgui.Begin('FocusBar', true, windowFlags) then
         local dist          = ('%.2f'):fmt(math.sqrt(targetEntity.Distance));
-        local targetNameText = targetEntity.Name;
+        local targetNameText;
+        
+        -- Use placeholder name if in preview mode, otherwise use actual name
+        if isPreviewMode then
+            targetNameText = "Focus";
+        else
+            targetNameText = targetEntity.Name;
+        end
+        
         local targetHpPercent = targetEntity.HPPercent .. '%';
 
-        if (gConfig.showEnemyId and isMonster) then
+        if (gConfig.showEnemyId and isMonster and not isPreviewMode) then
             local entMgr       = AshitaCore:GetMemoryManager():GetEntity();
             local targetServerId     = entMgr:GetServerId(targetIndex);
             local targetServerIdHex  = string.format('0x%X', targetServerId);

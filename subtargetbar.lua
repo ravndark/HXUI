@@ -49,6 +49,9 @@ subTargetBar.DrawWindow = function(settings)
     local sActive = GetSubTargetActive();
     local isConfigOpen = (showConfig ~= nil and showConfig[1] == true);
 
+    -- Track if we're in preview mode (showing placeholder when no real sub-target exists)
+    local isPreviewMode = false;
+
     -- Decide what index the bar should use
     local secondaryIndex;
 
@@ -57,6 +60,7 @@ subTargetBar.DrawWindow = function(settings)
         secondaryIndex = t1;
     elseif isConfigOpen then
         -- Config is open: draw a preview even if there is no real sub-target
+        isPreviewMode = true;
         if t1 ~= nil and t1 ~= 0 then
             -- If we have a main target, just use that
             secondaryIndex = t1;
@@ -212,10 +216,18 @@ subTargetBar.DrawWindow = function(settings)
 
         -- Obtain and prepare target information..
         local dist  = ('%.2f'):fmt(math.sqrt(targetEntity.Distance));
-        local targetNameText = targetEntity.Name;
+        local targetNameText;
+        
+        -- Use placeholder name if in preview mode, otherwise use actual name
+        if isPreviewMode then
+            targetNameText = "Sub Target";
+        else
+            targetNameText = targetEntity.Name;
+        end
+        
         local targetHpPercent = targetEntity.HPPercent .. '%';
 
-        if (gConfig.showEnemyId and isMonster) then
+        if (gConfig.showEnemyId and isMonster and not isPreviewMode) then
             local targetServerId = AshitaCore:GetMemoryManager():GetEntity():GetServerId(secondaryIndex);
             local targetServerIdHex = string.format('0x%X', targetServerId);
             targetNameText = targetNameText .. " [" .. string.sub(targetServerIdHex, -3) .. "]";
