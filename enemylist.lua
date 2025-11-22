@@ -1,8 +1,3 @@
---[[
-    Enemy List Module
-    Displays a list of enemies currently engaged with the player's party.
-]]
-
 require('common');
 require('helpers');
 local imgui = require('imgui');
